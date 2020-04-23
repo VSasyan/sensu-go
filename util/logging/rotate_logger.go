@@ -118,12 +118,13 @@ func (f *rotateFile) Rotate() (*rotateFile, error) {
 }
 
 func (f *rotateFile) Write(p []byte) (int, error) {
+	f.wg.Add(1)
 	projected := atomic.AddInt64(&f.count, int64(len(p)))
 	if projected <= f.max {
-		f.wg.Add(1)
 		defer f.wg.Done()
 		return f.file.Write(p)
 	}
+	f.wg.Done()
 	var err error
 	f.once.Do(func() {
 		var fr *rotateFile
