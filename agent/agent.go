@@ -19,12 +19,14 @@ import (
 	time "github.com/echlebek/timeproxy"
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/uuid"
+	"golang.org/x/time/rate"
 
 	corev2 "github.com/sensu/sensu-go/api/core/v2"
 	"github.com/sensu/sensu-go/asset"
 	"github.com/sensu/sensu-go/backend/agentd"
 	"github.com/sensu/sensu-go/command"
 	"github.com/sensu/sensu-go/handler"
+	"github.com/sensu/sensu-go/process"
 	"github.com/sensu/sensu-go/system"
 	"github.com/sensu/sensu-go/transport"
 	"github.com/sensu/sensu-go/util/retry"
@@ -66,6 +68,9 @@ type Agent struct {
 	apiQueue        queue
 	marshal         agentd.MarshalFunc
 	unmarshal       agentd.UnmarshalFunc
+
+	// ProcessGetter gets information about local agent processes.
+	ProcessGetter process.Getter
 }
 
 // NewAgent creates a new Agent. It returns non-nil error if there is any error
@@ -95,6 +100,7 @@ func NewAgentContext(ctx context.Context, config *Config) (*Agent, error) {
 		systemInfo:      &corev2.System{},
 		unmarshal:       agentd.UnmarshalJSON,
 		marshal:         agentd.MarshalJSON,
+		ProcessGetter:   &process.NoopProcessGetter{},
 	}
 
 	agent.statsdServer = NewStatsdServer(agent)
@@ -104,7 +110,7 @@ func NewAgentContext(ctx context.Context, config *Config) (*Agent, error) {
 	// of system info status.
 	systemInfoCtx, cancel := context.WithTimeout(ctx, time.Duration(DefaultSystemInfoRefreshInterval)*time.Second)
 	defer cancel()
-	_ = agent.refreshSystemInfo(systemInfoCtx)
+	_ = agent.RefreshSystemInfo(systemInfoCtx)
 	if err := systemInfoCtx.Err(); err != nil {
 		logger.WithError(err).Error("couldn't refresh all system information within deadline")
 	}
@@ -132,7 +138,8 @@ func (a *Agent) sendMessage(msg *transport.Message) {
 	a.sendq <- msg
 }
 
-func (a *Agent) refreshSystemInfo(ctx context.Context) error {
+// RefreshSystemInfo refreshes system, platform, and process information.
+func (a *Agent) RefreshSystemInfo(ctx context.Context) error {
 	info, err := system.Info()
 	if err != nil {
 		return err
@@ -141,6 +148,12 @@ func (a *Agent) refreshSystemInfo(ctx context.Context) error {
 	if a.config.DetectCloudProvider {
 		info.CloudProvider = system.GetCloudProvider(ctx)
 	}
+
+	proccessInfo, err := a.ProcessGetter.Get(ctx)
+	if err != nil {
+		return err
+	}
+	info.Processes = proccessInfo
 
 	a.systemInfoMu.Lock()
 	a.systemInfo = &info
@@ -159,7 +172,7 @@ func (a *Agent) refreshSystemInfoPeriodically(ctx context.Context) {
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(ctx, time.Duration(DefaultSystemInfoRefreshInterval)*time.Second/2)
 			defer cancel()
-			if err := a.refreshSystemInfo(ctx); err != nil {
+			if err := a.RefreshSystemInfo(ctx); err != nil {
 				logger.WithError(err).Error("failed to refresh system info")
 			}
 		case <-ctx.Done():
@@ -219,7 +232,11 @@ func (a *Agent) Run(ctx context.Context) error {
 	if !a.config.DisableAssets {
 		assetManager := asset.NewManager(a.config.CacheDir, a.getAgentEntity(), &a.wg)
 		var err error
-		a.assetGetter, err = assetManager.StartAssetManager(ctx)
+		limit := a.config.AssetsRateLimit
+		if limit == 0 {
+			limit = rate.Limit(asset.DefaultAssetsRateLimit)
+		}
+		a.assetGetter, err = assetManager.StartAssetManager(ctx, rate.NewLimiter(limit, a.config.AssetsBurstLimit))
 		if err != nil {
 			return err
 		}

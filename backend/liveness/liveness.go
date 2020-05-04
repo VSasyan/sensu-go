@@ -11,13 +11,9 @@ import (
 
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
+	"github.com/sensu/sensu-go/backend/store/etcd"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
-)
-
-var (
-	switches = make(map[string]Interface)
-	switchMu sync.Mutex
 )
 
 // SwitchPrefix contains the base path for switchset, which are tracked under
@@ -73,6 +69,8 @@ type Factory func(name string, dead, alive EventFunc, logger logrus.FieldLogger)
 // cached after the first instantiation, and the EventFuncs and logger cannot
 // be changed later.
 func EtcdFactory(ctx context.Context, client *clientv3.Client) Factory {
+	switches := make(map[string]Interface)
+	switchMu := new(sync.Mutex)
 	return Factory(func(name string, dead, alive EventFunc, logger logrus.FieldLogger) Interface {
 		switchMu.Lock()
 		defer switchMu.Unlock()
@@ -150,7 +148,9 @@ func NewSwitchSet(client *clientv3.Client, name string, dead, alive EventFunc, l
 // TTL value is 5. If a smaller value is passed, then an error will be returned
 // and no registration will occur.
 func (t *SwitchSet) Alive(ctx context.Context, id string, ttl int64) error {
-	return t.ping(ctx, id, ttl, true)
+	return etcd.Backoff(ctx).Retry(func(n int) (done bool, err error) {
+		return etcd.RetryRequest(n, t.ping(ctx, id, ttl, true))
+	})
 }
 
 // Bury buries a live or dead switch. The switch will no longer
@@ -160,10 +160,19 @@ func (t *SwitchSet) Bury(ctx context.Context, id string) error {
 
 	t.logger.WithFields(logrus.Fields{"key": key}).Debug("burying key")
 
-	if _, err := t.client.Put(ctx, key, buried); err != nil {
+	err := etcd.Backoff(ctx).Retry(func(n int) (done bool, err error) {
+		_, err = t.client.Put(ctx, key, buried)
+		return etcd.RetryRequest(n, err)
+	})
+	if err != nil {
 		return fmt.Errorf("error burying switch: %s", err)
 	}
-	if _, err := t.client.Delete(ctx, key); err != nil {
+
+	err = etcd.Backoff(ctx).Retry(func(n int) (done bool, err error) {
+		_, err = t.client.Delete(ctx, key)
+		return etcd.RetryRequest(n, err)
+	})
+	if err != nil {
 		return fmt.Errorf("error burying switch: %s", err)
 	}
 
@@ -182,7 +191,9 @@ func (t *SwitchSet) Bury(ctx context.Context, id string) error {
 // TTL value is 5. If a smaller value is passed, then an error will be returned
 // and no registration will occur.
 func (t *SwitchSet) Dead(ctx context.Context, id string, ttl int64) error {
-	return t.ping(ctx, id, ttl, false)
+	return etcd.Backoff(ctx).Retry(func(n int) (done bool, err error) {
+		return etcd.RetryRequest(n, t.ping(ctx, id, ttl, false))
+	})
 }
 
 func isBuried(event *clientv3.Event) bool {
@@ -326,8 +337,8 @@ func (t *SwitchSet) monitor(ctx context.Context) {
 // negative value, then it is ignored, as it is only an undead entity being
 // replaced by another undead entity.
 func (t *SwitchSet) handleEvent(ctx context.Context, event *clientv3.Event) {
-	if isBuried(event) {
-		// The event was buried - we don't need to handle it
+	if isBuried(event) || ctx.Err() != nil {
+		// The event was buried - we don't need to handle it, or the context was canceled.
 		return
 	}
 	ttl, prevState := t.getTTLFromEvent(event)

@@ -7,17 +7,30 @@ Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+## [5.19.3] - 2020-04-30
+
 ### Added
 - Added ability to make the Resty HTTP Timeout configurable.
 - Added the `event.is_silenced` & `event.check.is_silenced` field selectors.
 - [Web] Added the ability for labels and annotations with links to images to be
 displayed inline.
 - [Web] Added additional modes for those with colour blindness.
+- Added `processes` field to the system type to store agent local processes (commercial feature).
 - Users can now increment the logging level by sending SIGUSR1 to the
 sensu-backend or sensu-agent process.
 - Added a new `sensuctl describe-type` command to list all resource types.
 - Added a `timeout` flag to `sensu-backend init`.
 - Added `labels` and `annotations` as backend config options.
+- Added token substitution for assets.
+- [Web] Added the ability for labels and annotations with links to images to be
+displayed inline.
+- [Web] Added additional modes for those with colour blindness.
+- Added support for restarting the backend via SIGHUP. Config reloading is not
+supported yet.
+- [Web] Added the ability for labels and annotations with links to images to be
+displayed inline.
+- [Web] Added additional modes for those with colour blindness.
+- Added `Edition` field to version information.
 
 ### Changed
 - Warning messages from Resty library are now suppressed in sensuctl.
@@ -25,12 +38,30 @@ sensu-backend or sensu-agent process.
 
 ### Fixed
 - `sensu-backend init` now logs any TLS failures encountered.
+- Fixes a bug in multi-line metric extraction that appeared in windows agents.
 - Fixed an authn bug where sensu-backend would restart when agents disconnect.
 - Fixed a bug where check state and last_ok were not computed until the second
 instance of the event.
+- Fix the validation for env_vars to allow the equal sign in values.
 - Log to the warning level when an asset is not installed because none of the
 filters matched.
 - Return underlying errors when fetching an asset.
+- Fixed a bug where the etcd event store would return prefixed matches rather than exact matches when getting events by entity.
+- `sensuctl logout` now resets the TLS configuration.
+- [Web] Fixes issue where labels with links could lead to a crash.
+- Added a global rate limit for fetching assets so that asset retries are not abusive (can be
+configured using `--assets-rate-limit` and `--assets-burst-limit` on the agent and backend).
+- [Web] Fixed an issue where trying to use an unregistered theme could lead to a
+crash.
+- Fixed a bug that would cause the backend to crash.
+- Fixed a bug that would cause messages like "unary invoker failed" to appear
+in the logs.
+- Fixed several goroutine leaks.
+- Fixed a bug that would cause the backend to crash when the etcd client got an
+error saying "etcdserver: too many requests".
+
+## [5.19.2] - 2020-04-27
+*No changelog for this release.*
 
 ## [5.19.1] - 2020-04-13
 
