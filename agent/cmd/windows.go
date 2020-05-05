@@ -3,15 +3,16 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/sensu/sensu-go/util/logging"
 	"github.com/sensu/sensu-go/util/path"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/eventlog"
 )
 
 const (
@@ -24,6 +25,11 @@ const (
 	flagLogMaxSize           = "log-max-size"
 	flagLogRetentionDuration = "log-retention-duration"
 	flagLogRetentionFiles    = "log-retention-files"
+)
+
+var (
+	defaultConfigPath = fmt.Sprintf("%s\\agent.yml", path.SystemConfigDir())
+	defaultLogPath    = fmt.Sprintf("%s\\sensu-agent.log", path.SystemLogDir())
 )
 
 // NewWindowsServiceCommand creates a cobra command that offers subcommands
@@ -41,6 +47,15 @@ func NewWindowsServiceCommand() *cobra.Command {
 	return command
 }
 
+func numParents(cmd *cobra.Command) int {
+	var num int
+	for cmd.HasParent() {
+		num++
+		cmd = cmd.Parent()
+	}
+	return num
+}
+
 // NewWindowsInstallServiceCommand creates a cobra command that installs a
 // sensu-agent service in Windows.
 func NewWindowsInstallServiceCommand() *cobra.Command {
@@ -50,45 +65,11 @@ func NewWindowsInstallServiceCommand() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configFile := cmd.Flag(flagConfigFile).Value.String()
-			p, err := filepath.Abs(configFile)
-			if err != nil {
-				return fmt.Errorf("error reading config file: %s", err)
-			}
-			fi, err := os.Stat(p)
-			if err != nil {
-				return fmt.Errorf("error reading config file: %s", err)
-			}
-			if !fi.Mode().IsRegular() {
-				return errors.New("error reading config file: not a regular file")
-			}
-
-			logPath := viper.GetString(flagLogPath)
-			maxSize := viper.GetSizeInBytes(flagLogMaxSize)
-			if maxSize == 0 {
-				return fmt.Errorf("invalid max size: %s", viper.GetString(flagLogMaxSize))
-			}
-			retentionDuration := viper.GetDuration(flagLogRetentionDuration)
-			retentionFiles := viper.GetInt64(flagLogRetentionFiles)
-			cfg := logging.RotateFileLoggerConfig{
-				Path:              logPath,
-				MaxSizeBytes:      int64(maxSize),
-				RetentionDuration: retentionDuration,
-				RetentionFiles:    retentionFiles,
-			}
-			logWriter, err := logging.NewRotateFileLogger(cfg)
-			if err != nil {
-				return fmt.Errorf("error reading log file: %s", err)
-			}
-
-			return installService(serviceName, serviceDisplayName, serviceDescription, "service", "run", configFile, logWriter)
+			installArgs := append([]string{"service", "run"}, os.Args[numParents(cmd)+1:]...)
+			return installService(serviceName, serviceDisplayName, serviceDescription, installArgs...)
 		},
 	}
 
-	defaultConfigPath := fmt.Sprintf("%s\\agent.yml", path.SystemConfigDir())
-	defaultLogPath := fmt.Sprintf("%s\\sensu-agent.log", path.SystemLogDir())
-
-	cmd.Flags().StringP(flagConfigFile, "c", defaultConfigPath, "path to sensu-agent config file")
 	cmd.Flags().StringP(flagLogPath, "", defaultLogPath, "path to the sensu-agent log file")
 	cmd.Flags().StringP(flagLogMaxSize, "", "128 MB", "maximum size of log file")
 	cmd.Flags().StringP(flagLogRetentionDuration, "", "168h", "log file retention duration (s, m, h)")
@@ -112,14 +93,53 @@ func NewWindowsUninstallServiceCommand() *cobra.Command {
 }
 
 func NewWindowsRunServiceCommand() *cobra.Command {
-	command := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:           "run",
 		Short:         "run the sensu-agent service (blocking)",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runService(args)
+			logrus.SetFormatter(&logrus.JSONFormatter{})
+			isIntSession, err := svc.IsAnInteractiveSession()
+			if err != nil {
+				return fmt.Errorf("failed to determine if process is running in an interactive session: %v", err)
+			}
+			if !isIntSession {
+				// setup logging
+				elog, err := eventlog.Open(serviceName)
+				if err != nil {
+					return fmt.Errorf("failed to open eventlog: %s", err)
+				}
+				defer elog.Close()
+				rotateFileLoggerCfg := logging.RotateFileLoggerConfig{
+					Path: viper.GetString(flagLogPath),
+					//MaxSize:           viper.GetSizeInBytes(flagLogMaxSize),
+					RetentionDuration: viper.GetDuration(flagLogRetentionDuration),
+					RetentionFiles:    viper.GetInt64(flagLogRetentionFiles),
+				}
+				fileLogger, err := logging.NewRotateFileLogger(rotateFileLoggerCfg)
+				if err != nil {
+					elog.Error(1, fmt.Sprintf("error opening log file: %s", err))
+					return err
+				}
+				logrus.SetOutput(fileLogger)
+			}
+			cfg, err := NewAgentConfig(cmd)
+			if err != nil {
+				return err
+			}
+			return svc.Run(serviceName, NewService(cfg))
 		},
 	}
-	return command
+
+	cmd.Flags().StringP(flagLogPath, "", defaultLogPath, "path to the sensu-agent log file")
+	cmd.Flags().StringP(flagLogMaxSize, "", "128 MB", "maximum size of log file")
+	cmd.Flags().StringP(flagLogRetentionDuration, "", "168h", "log file retention duration (s, m, h)")
+	cmd.Flags().Int64P(flagLogRetentionFiles, "", 10, "maximum number of archived files to retain")
+
+	if err := handleConfig(cmd); err != nil {
+		// can only happen if there is developer error, so don't make any mistakes
+		panic(err)
+	}
+	return cmd
 }
