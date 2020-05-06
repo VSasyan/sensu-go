@@ -32,7 +32,6 @@ type Service struct {
 
 func (s *Service) start(ctx context.Context, cancel context.CancelFunc, changes chan<- svc.Status) chan error {
 	s.wg.Add(1)
-	defer s.wg.Done()
 	result := make(chan error, 1)
 	defer func() {
 		if e := recover(); e != nil {
@@ -59,6 +58,7 @@ func (s *Service) start(ctx context.Context, cancel context.CancelFunc, changes 
 	}()
 
 	go func() {
+		defer s.wg.Done()
 		if err := sensuAgent.Run(ctx); err != nil {
 			result <- err
 		}
