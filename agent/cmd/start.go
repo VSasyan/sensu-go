@@ -137,7 +137,7 @@ func NewAgentConfig(cmd *cobra.Command) (*agent.Config, error) {
 	cfg.TLS.KeyFile = viper.GetString(flagKeyFile)
 
 	if cfg.KeepaliveCriticalTimeout != 0 && cfg.KeepaliveCriticalTimeout < cfg.KeepaliveWarningTimeout {
-		logger.Fatalf("if set, --%s must be greater than --%s",
+		return nil, fmt.Errorf("if set, --%s must be greater than --%s",
 			flagKeepaliveCriticalTimeout, flagKeepaliveWarningTimeout)
 	}
 
