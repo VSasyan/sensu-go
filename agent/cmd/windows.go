@@ -133,8 +133,7 @@ func NewWindowsRunServiceCommand() *cobra.Command {
 				return err
 			}
 			logWriter := io.MultiWriter(fileLogger, os.Stderr)
-			// yoloooooooooo
-			stderr.writer = logWriter
+			logrus.SetOutput(logWriter)
 			cfg, err := NewAgentConfig(cmd)
 			if err != nil {
 				if !isIntSession {
@@ -156,10 +155,15 @@ func NewWindowsRunServiceCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringP(flagLogPath, "", defaultLogPath, "path to the sensu-agent log file")
-	cmd.Flags().StringP(flagLogMaxSize, "", "128 MB", "maximum size of log file")
-	cmd.Flags().StringP(flagLogRetentionDuration, "", "168h", "log file retention duration (s, m, h)")
-	cmd.Flags().Int64P(flagLogRetentionFiles, "", 10, "maximum number of archived files to retain")
+	viper.SetDefault(flagLogPath, defaultLogPath)
+	viper.SetDefault(flagLogMaxSize, "128 MB")
+	viper.SetDefault(flagLogRetentionDuration, "168h")
+	viper.SetDefault(flagLogRetentionFiles, 10)
+
+	cmd.Flags().String(flagLogPath, viper.GetString(flagLogPath), "path to the sensu-agent log file")
+	cmd.Flags().String(flagLogMaxSize, viper.GetString(flagLogMaxSize), "maximum size of log file")
+	cmd.Flags().String(flagLogRetentionDuration, viper.GetString(flagLogRetentionDuration), "log file retention duration (s, m, h)")
+	cmd.Flags().Int64(flagLogRetentionFiles, viper.GetInt64(flagLogRetentionFiles), "maximum number of archived files to retain")
 
 	if err := handleConfig(cmd); err != nil {
 		// can only happen if there is developer error, so don't make any mistakes
