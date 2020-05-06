@@ -240,6 +240,7 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	logger.Debug("validating backend URLs")
 	for _, burl := range a.config.BackendURLs {
+		logger.Debug("validating backend URL", burl)
 		if u, err := url.Parse(burl); err != nil {
 			return fmt.Errorf("bad backend URL (%s): %s", burl, err)
 		} else {
