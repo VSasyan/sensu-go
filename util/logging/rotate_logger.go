@@ -184,7 +184,7 @@ func NewRotateFileLogger(cfg RotateFileLoggerConfig) (*RotateFileLogger, error) 
 	if err == nil {
 		count = fi.Size()
 	}
-	if !os.IsNotExist(err) {
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	// Open the log file for writing in append mode whether or not it exists
