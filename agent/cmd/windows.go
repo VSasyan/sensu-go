@@ -126,7 +126,6 @@ func NewWindowsRunServiceCommand() *cobra.Command {
 				logrus.SetOutput(fileLogger)
 			}
 			cfg, err := NewAgentConfig(cmd)
-			fmt.Printf("%#v\n", *cfg)
 			if err != nil {
 				if !isIntSession {
 					elog.Error(1, fmt.Sprintf("error creating agent config: %s", err))

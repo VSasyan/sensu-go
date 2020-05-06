@@ -211,6 +211,7 @@ func (a *Agent) buildTransportHeaderMap() http.Header {
 // 8. Start sending periodic keepalives.
 // 9. Start the API server, shutdown the agent if doing so fails.
 func (a *Agent) Run(ctx context.Context) error {
+	fmt.Sprintf("%#v\n", a.config)
 	ctx, cancel := context.WithCancel(ctx)
 	defer func() {
 		if err := a.apiQueue.Close(); err != nil {
