@@ -113,8 +113,8 @@ func NewWindowsRunServiceCommand() *cobra.Command {
 			if !isIntSession {
 				defer elog.Close()
 				rotateFileLoggerCfg := logging.RotateFileLoggerConfig{
-					Path: viper.GetString(flagLogPath),
-					//MaxSize:           viper.GetSizeInBytes(flagLogMaxSize),
+					Path:              viper.GetString(flagLogPath),
+					MaxSize:           100000000000,
 					RetentionDuration: viper.GetDuration(flagLogRetentionDuration),
 					RetentionFiles:    viper.GetInt64(flagLogRetentionFiles),
 				}
@@ -124,6 +124,7 @@ func NewWindowsRunServiceCommand() *cobra.Command {
 					return err
 				}
 				logrus.SetOutput(fileLogger)
+				logger = logrus.New()
 			}
 			cfg, err := NewAgentConfig(cmd)
 			if err != nil {
