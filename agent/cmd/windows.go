@@ -134,8 +134,7 @@ func NewWindowsRunServiceCommand() *cobra.Command {
 			}
 			logWriter := io.MultiWriter(fileLogger, os.Stderr)
 			// yoloooooooooo
-			os.Stderr = logWriter
-			os.Stdout = logWriter
+			stderr.writer = logWriter
 			cfg, err := NewAgentConfig(cmd)
 			if err != nil {
 				if !isIntSession {
