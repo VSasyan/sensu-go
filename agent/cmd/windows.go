@@ -4,6 +4,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/sensu/sensu-go/util/logging"
@@ -110,22 +111,20 @@ func NewWindowsRunServiceCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to open eventlog: %s", err)
 			}
-			if !isIntSession {
-				defer elog.Close()
-				rotateFileLoggerCfg := logging.RotateFileLoggerConfig{
-					Path:              viper.GetString(flagLogPath),
-					MaxSizeBytes:      100000000000,
-					RetentionDuration: viper.GetDuration(flagLogRetentionDuration),
-					RetentionFiles:    viper.GetInt64(flagLogRetentionFiles),
-				}
-				fileLogger, err := logging.NewRotateFileLogger(rotateFileLoggerCfg)
-				if err != nil {
-					elog.Error(1, fmt.Sprintf("error opening log file: %s", err))
-					return err
-				}
-				logrus.SetOutput(fileLogger)
-				logger = logrus.WithFields(logrus.Fields{"component": "cmd"})
+			defer elog.Close()
+			rotateFileLoggerCfg := logging.RotateFileLoggerConfig{
+				Path:              viper.GetString(flagLogPath),
+				MaxSizeBytes:      100000000000,
+				RetentionDuration: viper.GetDuration(flagLogRetentionDuration),
+				RetentionFiles:    viper.GetInt64(flagLogRetentionFiles),
 			}
+			fileLogger, err := logging.NewRotateFileLogger(rotateFileLoggerCfg)
+			if err != nil {
+				elog.Error(1, fmt.Sprintf("error opening log file: %s", err))
+				return err
+			}
+			logWriter := io.MultiWriter(fileLogger, os.Stderr)
+			logrus.SetOutput(logWriter)
 			cfg, err := NewAgentConfig(cmd)
 			if err != nil {
 				if !isIntSession {
