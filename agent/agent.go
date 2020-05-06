@@ -238,7 +238,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		return errors.New("no backend URLs defined")
 	}
 
-	logger.Debug("validating backend URLs")
+	logger.Debug("validating backend URLs", a.config.BackendURLs)
 	for _, burl := range a.config.BackendURLs {
 		logger.Debug("validating backend URL", burl)
 		if u, err := url.Parse(burl); err != nil {
