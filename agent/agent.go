@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -227,6 +228,16 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	if timeout := a.config.KeepaliveCriticalTimeout; timeout > 0 && timeout < 5 {
 		return fmt.Errorf("bad keepalive critical timeout: %d (minimum value is 5 seconds)", timeout)
+	}
+
+	for _, burl := range a.config.BackendURLs {
+		if u, err := url.Parse(burl); err != nil {
+			return fmt.Errorf("bad backend URL (%s): %s", burl, err)
+		} else {
+			if u.Scheme != "ws" && u.Scheme != "wss" {
+				return fmt.Errorf("backend URL (%s) must have ws:// or wss:// scheme", burl)
+			}
+		}
 	}
 
 	if !a.config.DisableAssets {
@@ -474,12 +485,12 @@ func (a *Agent) connectWithBackoff(ctx context.Context) (transport.Transport, er
 	}
 
 	err := backoff.Retry(func(retry int) (bool, error) {
-		url := a.backendSelector.Select()
+		backendURL := a.backendSelector.Select()
 
-		logger.Infof("connecting to backend URL %q", url)
+		logger.Infof("connecting to backend URL %q", backendURL)
 		a.header.Set("Accept", agentd.ProtobufSerializationHeader)
 		logger.WithField("header", fmt.Sprintf("Accept: %s", agentd.ProtobufSerializationHeader)).Debug("setting header")
-		c, respHeader, err := transport.Connect(url, a.config.TLS, a.header, a.config.BackendHandshakeTimeout)
+		c, respHeader, err := transport.Connect(backendURL, a.config.TLS, a.header, a.config.BackendHandshakeTimeout)
 		if err != nil {
 			logger.WithError(err).Error("reconnection attempt failed")
 			return false, nil

@@ -69,7 +69,6 @@ func (s *Service) start(ctx context.Context, cancel context.CancelFunc, changes 
 }
 
 func (s *Service) Execute(_ []string, r <-chan svc.ChangeRequest, changes chan<- svc.Status) (bool, uint32) {
-	logger.Error("OMGWTFBBQ")
 	ctx, cancel := context.WithCancel(context.Background())
 	errs := s.start(ctx, cancel, changes)
 	elog, _ := eventlog.Open(serviceName)
