@@ -63,7 +63,11 @@ func (s *Service) start(ctx context.Context, cancel context.CancelFunc, changes 
 			logger.Info("signal received: ", <-sigs)
 		}()
 
-		go sensuAgent.Run(ctx)
+		go func() {
+			if err := sensuAgent.Run(ctx); err != nil {
+				result <- err
+			}
+		}()
 	}()
 	return result
 }
