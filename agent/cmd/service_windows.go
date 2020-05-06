@@ -28,46 +28,40 @@ func NewService(cfg *agent.Config) *Service {
 type Service struct {
 	cfg *agent.Config
 	wg  sync.WaitGroup
-	mu  sync.Mutex
 }
 
 func (s *Service) start(ctx context.Context, cancel context.CancelFunc, changes chan<- svc.Status) chan error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.wg.Wait()
 	s.wg.Add(1)
+	defer s.wg.Done()
 	result := make(chan error, 1)
-	go func() {
-		defer func() {
-			if e := recover(); e != nil {
-				changes <- svc.Status{State: svc.Stopped}
-				stack := runtimedebug.Stack()
-				result <- errors.New(string(stack))
-			}
-		}()
-		defer s.wg.Done()
-		changes <- svc.Status{State: svc.StartPending}
-		accepts := svc.AcceptShutdown | svc.AcceptStop
-		changes <- svc.Status{State: svc.Running, Accepts: accepts}
-
-		sensuAgent, err := agent.NewAgentContext(ctx, s.cfg)
-		if err != nil {
-			result <- err
-			return
+	defer func() {
+		if e := recover(); e != nil {
+			changes <- svc.Status{State: svc.Stopped}
+			stack := runtimedebug.Stack()
+			result <- errors.New(string(stack))
 		}
+	}()
+	changes <- svc.Status{State: svc.StartPending}
+	accepts := svc.AcceptShutdown | svc.AcceptStop
+	changes <- svc.Status{State: svc.Running, Accepts: accepts}
 
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			defer cancel()
-			logger.Info("signal received: ", <-sigs)
-		}()
+	sensuAgent, err := agent.NewAgentContext(ctx, s.cfg)
+	if err != nil {
+		result <- err
+		return result
+	}
 
-		go func() {
-			if err := sensuAgent.Run(ctx); err != nil {
-				result <- err
-			}
-		}()
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		defer cancel()
+		logger.Info("signal received: ", <-sigs)
+	}()
+
+	go func() {
+		if err := sensuAgent.Run(ctx); err != nil {
+			result <- err
+		}
 	}()
 	return result
 }
@@ -90,8 +84,9 @@ func (s *Service) Execute(_ []string, r <-chan svc.ChangeRequest, changes chan<-
 				return false, 0
 			}
 		case err := <-errs:
-			elog.Error(1, fmt.Sprintf("restarting due to error: %s", err))
-			s.start(ctx, cancel, changes)
+			elog.Error(1, fmt.Sprintf("fatal error: %s", err))
+			logger.WithError(err).Error("fatal error")
+			return true, 1
 		}
 	}
 	return false, 0
