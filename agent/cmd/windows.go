@@ -104,12 +104,12 @@ func NewWindowsRunServiceCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to determine if process is running in an interactive session: %v", err)
 			}
+			// setup logging
+			elog, err := eventlog.Open(serviceName)
+			if err != nil {
+				return fmt.Errorf("failed to open eventlog: %s", err)
+			}
 			if !isIntSession {
-				// setup logging
-				elog, err := eventlog.Open(serviceName)
-				if err != nil {
-					return fmt.Errorf("failed to open eventlog: %s", err)
-				}
 				defer elog.Close()
 				rotateFileLoggerCfg := logging.RotateFileLoggerConfig{
 					Path: viper.GetString(flagLogPath),
@@ -126,9 +126,22 @@ func NewWindowsRunServiceCommand() *cobra.Command {
 			}
 			cfg, err := NewAgentConfig(cmd)
 			if err != nil {
+				if !isIntSession {
+					elog.Error(1, fmt.Sprintf("error creating agent config: %s", err))
+				}
+				logger.Error(err)
 				return err
 			}
-			return svc.Run(serviceName, NewService(cfg))
+			run := svc.Run
+			if isIntSession {
+				run = debug.Run
+			}
+			if err := run(serviceName, NewService(cfg)); err != nil {
+				err = fmt.Errorf("error running service: %s", err)
+				elog.Error(1, err.Error())
+				return err
+			}
+			return nil
 		},
 	}
 
