@@ -188,9 +188,9 @@ func NewRotateFileLogger(cfg RotateFileLoggerConfig) (*RotateFileLogger, error) 
 		return nil, err
 	}
 	// Open the log file for writing in append mode whether or not it exists
-	f, ferr := os.OpenFile(w.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if ferr != nil {
-		err = ferr
+	f, err := os.OpenFile(w.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return nil, err
 	}
 	fr := &rotateFile{
 		file:      f,
