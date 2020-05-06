@@ -233,9 +233,12 @@ func (a *Agent) Run(ctx context.Context) error {
 		return fmt.Errorf("bad keepalive critical timeout: %d (minimum value is 5 seconds)", timeout)
 	}
 
+	logger.Debug("validating backend URLs is defined")
 	if len(a.config.BackendURLs) == 0 {
 		return errors.New("no backend URLs defined")
 	}
+
+	logger.Debug("validating backend URLs")
 	for _, burl := range a.config.BackendURLs {
 		if u, err := url.Parse(burl); err != nil {
 			return fmt.Errorf("bad backend URL (%s): %s", burl, err)
