@@ -243,6 +243,8 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 	}
 
+	logger.Debug("configuration successfully validated")
+
 	if !a.config.DisableAssets {
 		assetManager := asset.NewManager(a.config.CacheDir, a.getAgentEntity(), &a.wg)
 		var err error
