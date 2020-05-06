@@ -86,7 +86,7 @@ func (s *Service) Execute(_ []string, r <-chan svc.ChangeRequest, changes chan<-
 		case err := <-errs:
 			elog.Error(1, fmt.Sprintf("fatal error: %s", err))
 			logger.WithError(err).Error("fatal error")
-			return true, 1
+			return false, 1
 		}
 	}
 	return false, 0
