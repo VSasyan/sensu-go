@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	runtimedebug "runtime/debug"
 
 	"github.com/sensu/sensu-go/util/logging"
 	"github.com/sensu/sensu-go/util/path"
@@ -112,6 +113,14 @@ func NewWindowsRunServiceCommand() *cobra.Command {
 				return fmt.Errorf("failed to open eventlog: %s", err)
 			}
 			defer elog.Close()
+			defer func() {
+				if e := recover(); e != nil {
+					stack := runtimedebug.Stack()
+					msg := fmt.Sprintf("%v\n%s", e, stack)
+					elog.Error(1, msg)
+					panic(e)
+				}
+			}()
 			rotateFileLoggerCfg := logging.RotateFileLoggerConfig{
 				Path:              viper.GetString(flagLogPath),
 				MaxSizeBytes:      100000000000,
