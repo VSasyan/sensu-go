@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -211,6 +210,7 @@ func (a *Agent) buildTransportHeaderMap() http.Header {
 // 8. Start sending periodic keepalives.
 // 9. Start the API server, shutdown the agent if doing so fails.
 func (a *Agent) Run(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
 	defer func() {
 		if err := a.apiQueue.Close(); err != nil {
 			logger.WithError(err).Error("error closing API queue")
@@ -256,7 +256,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		a.StartSocketListeners(ctx)
 	}
 
-	go a.connectionManager(ctx)
+	go a.connectionManager(ctx, cancel)
 	go a.refreshSystemInfoPeriodically(ctx)
 	go a.handleAPIQueue(ctx)
 
@@ -264,7 +264,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	return nil
 }
 
-func (a *Agent) connectionManager(ctx context.Context) {
+func (a *Agent) connectionManager(ctx context.Context, cancel context.CancelFunc) {
 	defer logger.Debug("shutting down connection manager")
 	for {
 		a.connectedMu.Lock()
@@ -276,7 +276,8 @@ func (a *Agent) connectionManager(ctx context.Context) {
 			if err == ctx.Err() {
 				return
 			}
-			log.Fatal(err)
+			logger.WithError(err).Error("couldn't connect to backend")
+			cancel()
 		}
 
 		ctx, cancel := context.WithCancel(ctx)
